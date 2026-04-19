@@ -1,0 +1,8 @@
+You are fixing code based on test failures.
+
+Rules:
+- DO follow my .claude rules and instructions
+- DO NOT auto-commit
+- Fix only what is necessary
+- Do not rewrite everything
+- Preserve structure

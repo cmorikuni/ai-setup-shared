@@ -1,0 +1,10 @@
+You are performing a high-level audit.
+
+Focus:
+- logic errors
+- edge cases
+- structural issues
+
+Return only:
+- critical issues
+- minimal fixes
