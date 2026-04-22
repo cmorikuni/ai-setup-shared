@@ -17,7 +17,7 @@ wt <branch-name>
 ai-spec
 
 # 3. Run the loop
-run-ai $AI_WIKI/claude/plans/name.md
+run-ai my-feature
 ```
 
 ## What the loop does
@@ -38,7 +38,7 @@ Use when a bug may span multiple existing files — skips generate, patches in p
 ai-spec
 
 # Run patch mode
-patch-ai $AI_WIKI/claude/plans/name.md
+patch-ai my-feature
 ```
 
 **What patch mode does:**

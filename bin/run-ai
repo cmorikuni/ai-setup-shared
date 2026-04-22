@@ -1,11 +1,22 @@
 #!/usr/bin/env zsh
 # Run the AI orchestrator in generate mode.
-# Usage: run-ai [spec-file]
-#   spec-file defaults to .ai-spec.md in cwd
+# Usage: run-ai [name-or-path]
+#   run-ai              → .ai-spec.md in cwd
+#   run-ai my-feature   → $AI_WIKI/claude/plans/my-feature.md
+#   run-ai /full/path   → used as-is
 set -e
 
-SPEC_FILE="${1:-.ai-spec.md}"
+PLANS_DIR="${AI_WIKI:-$HOME/wiki}/claude/plans"
 ORCHESTRATOR="${AI_ORCHESTRATOR:-$HOME/ai-setup/ai-orchestrator}/orchestrator.py"
+
+arg="${1:-}"
+if [[ -z "$arg" ]]; then
+    SPEC_FILE=".ai-spec.md"
+elif [[ "$arg" == /* || "$arg" == ~* || "$arg" == ./* ]]; then
+    SPEC_FILE="$arg"
+else
+    SPEC_FILE="$PLANS_DIR/${arg%.md}.md"
+fi
 
 if [[ ! -f "$SPEC_FILE" ]]; then
     echo "[run-ai] spec not found: $SPEC_FILE" >&2
