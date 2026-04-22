@@ -5,13 +5,12 @@ AI Orchestrator — local-LLM code-generation + test loop.
 Configuration (edit here or set env vars):
   AI_TEST_CMD   — command to run tests (default: pytest)
   LLM_PROXY_URL — Ollama proxy URL (default: http://localhost:11435/v1/chat/completions)
-  ANTHROPIC_API_KEY — required for cloud escalation to Claude Sonnet
 
 Models (edit MODELS dict to match your Ollama setup):
   generate  — strong code model for initial generation
   fix[0]    — fast model for trivial fixes
   fix[1]    — strong model for complex fixes
-  audit     — cloud/sonnet for final escalation
+  audit     — cloud escalation via `claude` CLI
 """
 import json
 import os
@@ -19,9 +18,8 @@ import re
 import subprocess
 import sys
 import time
+import urllib.request
 from pathlib import Path
-
-import requests
 
 PROXY_URL = os.environ.get("LLM_PROXY_URL", "http://localhost:11435/v1/chat/completions")
 TEST_CMD = os.environ.get("AI_TEST_CMD", "pytest")
@@ -49,29 +47,28 @@ def load_prompt(name: str) -> str:
 
 
 def call_local_model(model: str, system: str, user: str) -> str:
-    payload = {
+    payload = json.dumps({
         "model": model,
         "messages": [
             {"role": "system", "content": system},
             {"role": "user", "content": user},
         ],
         "stream": False,
-    }
-    resp = requests.post(PROXY_URL, json=payload, timeout=300)
-    resp.raise_for_status()
-    return resp.json()["choices"][0]["message"]["content"]
+    }).encode()
+    req = urllib.request.Request(PROXY_URL, data=payload, headers={"Content-Type": "application/json"})
+    with urllib.request.urlopen(req, timeout=300) as resp:
+        return json.loads(resp.read())["choices"][0]["message"]["content"]
 
 
 def call_cloud_sonnet(system: str, user: str) -> str:
-    import anthropic
-    client = anthropic.Anthropic()
-    msg = client.messages.create(
-        model="claude-sonnet-4-6",
-        max_tokens=4096,
-        system=system,
-        messages=[{"role": "user", "content": user}],
+    prompt = f"{system}\n\n{user}"
+    result = subprocess.run(
+        ["claude", "-p", prompt],
+        capture_output=True, text=True, timeout=300,
     )
-    return msg.content[0].text
+    if result.returncode != 0:
+        raise RuntimeError(f"claude CLI failed: {result.stderr}")
+    return result.stdout
 
 
 def run_tests(cmd: str, cwd: Path) -> tuple[bool, str]:
@@ -151,8 +148,8 @@ def apply_patches(patches: dict[str, str], cwd: Path) -> None:
 
 # ── modes ─────────────────────────────────────────────────────────────────────
 
-def generate_main(spec_path: Path) -> None:
-    cwd = spec_path.parent
+def generate_main(spec_path: Path, cwd: Path | None = None) -> None:
+    cwd = cwd or spec_path.parent
     output_path = cwd / ".ai_output.py"
     log_path = cwd / ".ai_log.jsonl"
     spec = spec_path.read_text()
@@ -211,8 +208,8 @@ def generate_main(spec_path: Path) -> None:
     print(f"[orchestrator] audit result:\n{audit_result}")
 
 
-def patch_main(spec_path: Path) -> None:
-    cwd = spec_path.parent
+def patch_main(spec_path: Path, cwd: Path | None = None) -> None:
+    cwd = cwd or spec_path.parent
     log_path = cwd / ".ai_log.jsonl"
     spec = spec_path.read_text()
 
@@ -292,26 +289,36 @@ def patch_main(spec_path: Path) -> None:
 
 
 def main() -> None:
-    if len(sys.argv) < 2:
-        print("Usage: orchestrator.py [--patch] <spec-file>", file=sys.stderr)
+    args = sys.argv[1:]
+    if not args:
+        print("Usage: orchestrator.py [--patch] [--cwd <dir>] <spec-file>", file=sys.stderr)
         sys.exit(1)
 
-    if sys.argv[1] == "--patch":
-        if len(sys.argv) < 3:
-            print("Usage: orchestrator.py --patch <spec-file>", file=sys.stderr)
+    cwd_override: Path | None = None
+    if "--cwd" in args:
+        idx = args.index("--cwd")
+        if idx + 1 >= len(args):
+            print("--cwd requires a directory argument", file=sys.stderr)
             sys.exit(1)
-        spec_path = Path(sys.argv[2]).resolve()
+        cwd_override = Path(args[idx + 1]).resolve()
+        args = args[:idx] + args[idx + 2:]
+
+    if args[0] == "--patch":
+        if len(args) < 2:
+            print("Usage: orchestrator.py --patch [--cwd <dir>] <spec-file>", file=sys.stderr)
+            sys.exit(1)
+        spec_path = Path(args[1]).resolve()
         if not spec_path.exists():
             print(f"Spec not found: {spec_path}", file=sys.stderr)
             sys.exit(1)
-        patch_main(spec_path)
+        patch_main(spec_path, cwd_override)
         return
 
-    spec_path = Path(sys.argv[1]).resolve()
+    spec_path = Path(args[0]).resolve()
     if not spec_path.exists():
         print(f"Spec not found: {spec_path}", file=sys.stderr)
         sys.exit(1)
-    generate_main(spec_path)
+    generate_main(spec_path, cwd_override)
 
 
 if __name__ == "__main__":

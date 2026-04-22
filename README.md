@@ -61,19 +61,9 @@ export PATH="$HOME/ai-setup/bin:$PATH"
 
 Edit the paths at the top of `zshrc-snippets.sh` to match your environment (`AI_REPO`, `AI_WORKTREES_DIR`, `AI_WIKI`, etc.).
 
-### 5. Set your API key (for cloud escalation)
+### 5. Install Claude Code (for cloud escalation)
 
-```bash
-export ANTHROPIC_API_KEY="sk-ant-..."
-```
-
-### 6. Install ai-orchestrator dependencies
-
-```bash
-cd ~/ai-setup/ai-orchestrator
-pip install -r requirements.txt
-# or: uv pip install -r requirements.txt
-```
+Cloud escalation uses the `claude` CLI — no API key needed separately. Install Claude Code if you haven't already: https://claude.ai/code
 
 ## Obsidian Vault structure
 

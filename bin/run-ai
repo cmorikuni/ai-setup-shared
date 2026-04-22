@@ -23,4 +23,4 @@ if [[ ! -f "$SPEC_FILE" ]]; then
     exit 1
 fi
 
-python3 "$ORCHESTRATOR" "$SPEC_FILE"
+python3 "$ORCHESTRATOR" --cwd "$PWD" "$SPEC_FILE"
