@@ -9,19 +9,19 @@
 # ─── CONFIG (edit these) ──────────────────────────────────────────────────────
 
 # Path to your main git repo (the one you create worktrees from)
-AI_REPO=~/Repos/make_world/world/asdf
+AI_REPO=${AI_REPO:-~/Repos/your-main-repo}
 
 # Where git worktrees are checked out
-AI_WORKTREES_DIR=~/Repos/cm-worktrees
+AI_WORKTREES_DIR=${AI_WORKTREES_DIR:-~/Repos/worktrees}
 
 # Path to your wiki / second brain (Obsidian vault or plain folder)
-AI_WIKI=~/wiki
+AI_WIKI=${AI_WIKI:-~/wiki}
 
 # Path to the ai-orchestrator repo
-AI_ORCHESTRATOR=~/ai-setup/ai-orchestrator
+AI_ORCHESTRATOR=${AI_ORCHESTRATOR:-~/ai-setup/ai-orchestrator}
 
 # Path to the ollama proxy script
-AI_PROXY=~/ai-setup/bin/ollama-proxy.py
+AI_PROXY=${AI_PROXY:-~/ai-setup/bin/ollama-proxy.py}
 
 # ─── OLLAMA ───────────────────────────────────────────────────────────────────
 
