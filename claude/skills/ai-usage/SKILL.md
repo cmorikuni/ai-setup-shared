@@ -81,4 +81,4 @@ Edit the top of `orchestrator.py` to set:
 - Do NOT auto-commit
 - Do NOT share `.ai_output.py` across worktrees
 - Run `run-ai` inside the worktree, not the main repo
-- `ANTHROPIC_API_KEY` must be set for cloud escalation
+- Cloud escalation uses `claude -p` — no API key needed, Claude Code handles auth
