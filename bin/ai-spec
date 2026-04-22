@@ -1,0 +1,25 @@
+#!/usr/bin/env zsh
+# Write a spec — prompts for filename and short notes, then launches grill-me via Claude Code.
+#
+# Requires:
+#   AI_WIKI  — set in zshrc-snippets.sh (defaults to ~/wiki)
+#   oclaude  — sourced from zshrc-snippets.sh
+
+PLANS_DIR="${AI_WIKI:-$HOME/wiki}/claude/plans"
+
+# 1. Spec filename
+echo -n "Spec filename (no path, no extension): "
+read SPEC_NAME
+SPEC_FILE="$PLANS_DIR/${SPEC_NAME}.md"
+
+# 2. Short notes (single line)
+echo -n "Short notes (one line summary): "
+read NOTES
+echo ""
+
+echo "[ai-spec] Launching grill-me → $SPEC_FILE"
+exec oclaude "" "I want to write a spec. Here are my initial notes:
+
+$NOTES
+
+Please run /grill-me to help me structure these into a proper spec, then save the final result to $SPEC_FILE"

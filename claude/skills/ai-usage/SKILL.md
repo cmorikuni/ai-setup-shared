@@ -13,14 +13,11 @@ Print the entire content below verbatim as your response.
 # 1. Create / enter a worktree (or just cd to your project)
 wt <branch-name>
 
-# 2. Write your spec (Ctrl+D to save)
+# 2. Write your spec — prompts for name + notes, saves to wiki/claude/plans/
 ai-spec
 
 # 3. Run the loop
-run-ai
-
-# Or steps 2+3 combined:
-ai-run
+run-ai $AI_WIKI/claude/plans/name.md
 ```
 
 ## What the loop does
@@ -40,8 +37,8 @@ Use when a bug may span multiple existing files — skips generate, patches in p
 # Write a spec describing the issue
 ai-spec
 
-# Run with --patch flag
-orchestrator.py --patch .ai-spec.md
+# Run patch mode
+patch-ai $AI_WIKI/claude/plans/name.md
 ```
 
 **What patch mode does:**

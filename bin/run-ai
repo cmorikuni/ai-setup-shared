@@ -1,0 +1,15 @@
+#!/usr/bin/env zsh
+# Run the AI orchestrator in generate mode.
+# Usage: run-ai [spec-file]
+#   spec-file defaults to .ai-spec.md in cwd
+set -e
+
+SPEC_FILE="${1:-.ai-spec.md}"
+ORCHESTRATOR="${AI_ORCHESTRATOR:-$HOME/ai-setup/ai-orchestrator}/orchestrator.py"
+
+if [[ ! -f "$SPEC_FILE" ]]; then
+    echo "[run-ai] spec not found: $SPEC_FILE" >&2
+    exit 1
+fi
+
+python3 "$ORCHESTRATOR" "$SPEC_FILE"

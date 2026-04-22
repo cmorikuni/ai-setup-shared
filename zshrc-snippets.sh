@@ -9,10 +9,10 @@
 # ─── CONFIG (edit these) ──────────────────────────────────────────────────────
 
 # Path to your main git repo (the one you create worktrees from)
-AI_REPO=~/Repos/your-main-repo
+AI_REPO=~/Repos/make_world/world/asdf
 
 # Where git worktrees are checked out
-AI_WORKTREES_DIR=~/Repos/worktrees
+AI_WORKTREES_DIR=~/Repos/cm-worktrees
 
 # Path to your wiki / second brain (Obsidian vault or plain folder)
 AI_WIKI=~/wiki
@@ -40,10 +40,28 @@ export OLLAMA_FLASH_ATTENTION=1
 # 8-bit context cache quantization (~50% VRAM savings)
 export OLLAMA_KV_CACHE_TYPE=q8_0
 
-# Create an optimized local variant of qwen3-coder for your machine
+# ─── CUSTOM MODEL CREATION FUNCTIONS ──────────────────────────────────────────
+
+# Create an optimized Kimi Pro variant
+# Run once after `ollama pull kimi:latest`
+create-kimi-pro() {
+    echo ">> Creating optimized Kimi Pro model (32k context)..."
+    local modelfile=$(mktemp)
+    printf '%s\n' \
+        'FROM kimi:latest' \
+        'PARAMETER num_ctx 32768' \
+        'PARAMETER num_predict 4096' \
+        'PARAMETER temperature 0' \
+        'PARAMETER num_thread 8' \
+        > "$modelfile"
+    ollama create kimi-pro -f "$modelfile"
+    rm "$modelfile"
+}
+
+# Create an optimized qwen3-coder Pro variant
 # Run once after `ollama pull qwen3-coder:latest`
-create-qwen3-coder-local() {
-    echo ">> Creating optimized qwen3-coder model (32k context)..."
+create-qwen3-coder-pro() {
+    echo ">> Creating optimized qwen3-coder Pro model (32k context)..."
     local modelfile=$(mktemp)
     printf '%s\n' \
         'FROM qwen3-coder:latest' \
@@ -52,14 +70,30 @@ create-qwen3-coder-local() {
         'PARAMETER temperature 0' \
         'PARAMETER num_thread 8' \
         > "$modelfile"
-    ollama create qwen3-coder-local -f "$modelfile"
+    ollama create qwen3-coder-pro -f "$modelfile"
     rm "$modelfile"
 }
 
-# Create an optimized mistral-small variant
+# Create an optimized qwen3-coder Fast variant
+# Run once after `ollama pull qwen3-coder:latest`
+create-qwen3-coder-fast() {
+    echo ">> Creating optimized qwen3-coder Fast model (16k context)..."
+    local modelfile=$(mktemp)
+    printf '%s\n' \
+        'FROM qwen3-coder:latest' \
+        'PARAMETER num_ctx 16384' \
+        'PARAMETER num_predict 2048' \
+        'PARAMETER temperature 0' \
+        'PARAMETER num_thread 8' \
+        > "$modelfile"
+    ollama create qwen3-coder-fast -f "$modelfile"
+    rm "$modelfile"
+}
+
+# Create an optimized mistral-small variant for MBP
 # Run once after `ollama pull mistral-small:24b`
-create-mistral-small-local() {
-    echo ">> Creating optimized mistral-small model (32k context)..."
+create-mistral-small-mbp() {
+    echo ">> Creating optimized mistral-small model for MBP (32k context)..."
     local modelfile=$(mktemp)
     printf '%s\n' \
         'FROM mistral-small:24b' \
@@ -68,7 +102,7 @@ create-mistral-small-local() {
         'PARAMETER temperature 0' \
         'PARAMETER num_thread 8' \
         > "$modelfile"
-    ollama create mistral-small-local -f "$modelfile"
+    ollama create mistral-small-mbp -f "$modelfile"
     rm "$modelfile"
 }
 
@@ -81,8 +115,9 @@ claude-skip-permissions() {
 
 # Run Claude Code backed by a local Ollama model instead of the cloud API.
 # Usage: oclaude [model]
-#   oclaude           → qwen3-coder-local (default, strongest)
-#   oclaude mistral   → mistral-small-local (faster)
+#   oclaude           → qwen3-coder-pro (default, strongest)
+#   oclaude fast      → qwen3-coder-fast (faster)
+#   oclaude mistral   → mistral-small-mbp (faster)
 #   oclaude 7b        → qwen2.5-coder:7b (lightweight)
 #   oclaude <name>    → any ollama model by name
 oclaude() {
@@ -93,11 +128,14 @@ oclaude() {
         "7b")
             model_name="qwen2.5-coder:7b"
             ;;
+        "fast")
+            model_name="qwen3-coder-fast"
+            ;;
         "mistral")
-            model_name="mistral-small-local"
+            model_name="mistral-small-mbp"
             ;;
         ""|"pro")
-            model_name="qwen3-coder-local:latest"
+            model_name="qwen3-coder-pro:latest"
             ;;
         *)
             model_name="$target_model"
@@ -133,38 +171,20 @@ ensure-proxy() {
     fi
 }
 
-# Run the AI orchestrator against a spec file
-# Usage: run-ai [spec-file]  (default: .ai-spec.md in cwd)
-run-ai() {
-    local spec="${1:-.ai-spec.md}"
+# Run the AI orchestrator — implementation lives in bin/run-ai and bin/patch-ai
+# (must be on $PATH, e.g. ~/ai-setup/bin)
+#
+# Usage:
+#   run-ai [spec-file]    — generate mode (default: .ai-spec.md in cwd)
+#   patch-ai [spec-file]  — patch mode / bugfixes on existing code
 
-    if [[ ! -f "$spec" ]]; then
-        echo "Spec not found: $spec"
-        return 1
-    fi
-
-    if ! git rev-parse --is-inside-work-tree &>/dev/null; then
-        echo "Not in git repo"
-        return 1
-    fi
-
-    ensure-proxy
-
-    export LLM_PROXY_URL="http://localhost:11435/v1/chat/completions"
-
-    python3 "$AI_ORCHESTRATOR/orchestrator.py" "$spec"
-}
-
-# Write a spec to .ai-spec.md (Ctrl+D to finish)
-ai-spec() {
-    cat > .ai-spec.md
-}
-
-# Shortcut: write spec then immediately run
-ai-run() {
-    ai-spec
-    run-ai
-}
+# Write a spec — prompts for filename + one-line notes, then launches grill-me.
+# Specs are saved to $AI_WIKI/claude/plans/<name>.md
+# Implementation: bin/ai-spec (must be on $PATH, e.g. ~/ai-setup/bin)
+#
+# Workflow:
+#   1. ai-spec                              → writes spec via grill-me
+#   2. run-ai $AI_WIKI/claude/plans/name.md → run the orchestrator against it
 
 # ─── GIT WORKTREES ────────────────────────────────────────────────────────────
 #
