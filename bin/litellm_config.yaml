@@ -1,0 +1,42 @@
+model_list:
+  - model_name: qwen-local        # default — strong coder model
+    litellm_params:
+      model: ollama_chat/qwen3-coder-pro
+      api_base: http://localhost:11434
+      stream: true
+    extra_body:
+      stop:
+        - "<|file_separator|>"
+        - "<|endoftext|>"
+        - "<|im_start|>"
+        - "<|im_end|>"
+        - "</tool_code>"
+        - "Observation:"
+
+  - model_name: qwen-fast         # small context window, fast iterations
+    litellm_params:
+      model: ollama_chat/qwen3-coder-fast
+      api_base: http://localhost:11434
+      stream: true
+
+  - model_name: kimi-local        # 128k context, long refactors
+    litellm_params:
+      model: ollama_chat/kimi-pro
+      api_base: http://localhost:11434
+      stream: true
+
+  - model_name: mistral-local     # fast and cheap, good for simple fixes
+    litellm_params:
+      model: ollama_chat/mistral-small-mbp
+      api_base: http://localhost:11434
+      stream: true
+
+general_settings:
+  master_key: sk-local-dev
+  request_timeout: 120
+  allow_requests_on_db_unavailable: true
+  max_retries: 2
+
+litellm_settings:
+  drop_params: true     # silently drops Anthropic-specific params Ollama doesn't support
+  set_verbose: false

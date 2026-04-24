@@ -4,9 +4,12 @@
 # Source this from your ~/.zshrc:
 #   source ~/ai-setup/zshrc-snippets.sh
 #
-# Edit the CONFIG block below to match your environment.
+# Set the CONFIG vars before sourcing (or export them in ~/.zshrc above the source line).
 
-# ─── CONFIG (edit these) ──────────────────────────────────────────────────────
+# ─── CONFIG (set these in ~/.zshrc before sourcing) ───────────────────────────
+
+# Path to your Obsidian wiki / second brain
+AI_WIKI=${AI_WIKI:-~/wiki}
 
 # Path to your main git repo (the one you create worktrees from)
 AI_REPO=${AI_REPO:-~/Repos/your-main-repo}
@@ -14,191 +17,123 @@ AI_REPO=${AI_REPO:-~/Repos/your-main-repo}
 # Where git worktrees are checked out
 AI_WORKTREES_DIR=${AI_WORKTREES_DIR:-~/Repos/worktrees}
 
-# Path to your wiki / second brain (Obsidian vault or plain folder)
-AI_WIKI=${AI_WIKI:-~/wiki}
-
-# Path to the ai-orchestrator repo
-AI_ORCHESTRATOR=${AI_ORCHESTRATOR:-~/ai-setup/ai-orchestrator}
-
-# Path to the ollama proxy script
-AI_PROXY=${AI_PROXY:-~/ai-setup/bin/ollama-proxy.py}
+# LiteLLM + model config (defaults work if you copied the files to ~/.local/bin/)
+AI_LITELLM_YAML=${AI_LITELLM_YAML:-$HOME/.local/bin/litellm_config.yaml}
+AI_MODELS_YAML=${AI_MODELS_YAML:-$HOME/.local/bin/custom_models.yaml}
 
 # ─── OLLAMA ───────────────────────────────────────────────────────────────────
 
-# Allow multiple models loaded simultaneously
-export OLLAMA_MAX_LOADED_MODELS=2
+export OLLAMA_FLASH_ATTENTION=1   # faster attention on Apple Silicon
+export OLLAMA_KEEP_ALIVE=15m      # keep model loaded between requests
 
-# Allow parallel requests
-export OLLAMA_NUM_PARALLEL=2
+# Auto-start Ollama when a new shell opens (inherits env vars above).
+# Do NOT use 'brew services start ollama' — launchd won't inherit these vars.
+if ! curl -sf http://localhost:11434 > /dev/null 2>&1; then
+    nohup ollama serve > /tmp/ollama.log 2>&1 &
+    disown
+fi
 
-# Keep models in VRAM
-export OLLAMA_KEEP_ALIVE=10m
+# ─── SECOND BRAIN ─────────────────────────────────────────────────────────────
 
-# Flash Attention (beneficial on Apple Silicon)
-export OLLAMA_FLASH_ATTENTION=1
+# Run once per machine to symlink ~/.claude and ~/.claude-local into the wiki.
+# This makes Claude's memory, sessions, and settings persist across reinstalls.
+claude-bootstrap() {
+    local wiki_root="${AI_WIKI}/claude"
 
-# 8-bit context cache quantization (~50% VRAM savings)
-export OLLAMA_KV_CACHE_TYPE=q8_0
+    mkdir -p "$wiki_root/cloud"
+    mkdir -p "$wiki_root/local"
 
-# ─── CUSTOM MODEL CREATION FUNCTIONS ──────────────────────────────────────────
+    if [[ ! -L ~/.claude ]]; then
+        [[ -d ~/.claude ]] && mv ~/.claude ~/.claude.bak
+        ln -s "$wiki_root/cloud" ~/.claude
+        echo "Linked Cloud Brain: ~/.claude -> $wiki_root/cloud"
+    else
+        echo "Cloud Brain already linked: $(readlink ~/.claude)"
+    fi
 
-# Create an optimized Kimi Pro variant
-# Run once after `ollama pull kimi:latest`
-create-kimi-pro() {
-    echo ">> Creating optimized Kimi Pro model (32k context)..."
-    local modelfile=$(mktemp)
-    printf '%s\n' \
-        'FROM kimi:latest' \
-        'PARAMETER num_ctx 32768' \
-        'PARAMETER num_predict 4096' \
-        'PARAMETER temperature 0' \
-        'PARAMETER num_thread 8' \
-        > "$modelfile"
-    ollama create kimi-pro -f "$modelfile"
-    rm "$modelfile"
-}
-
-# Create an optimized qwen3-coder Pro variant
-# Run once after `ollama pull qwen3-coder:latest`
-create-qwen3-coder-pro() {
-    echo ">> Creating optimized qwen3-coder Pro model (32k context)..."
-    local modelfile=$(mktemp)
-    printf '%s\n' \
-        'FROM qwen3-coder:latest' \
-        'PARAMETER num_ctx 32768' \
-        'PARAMETER num_predict 4096' \
-        'PARAMETER temperature 0' \
-        'PARAMETER num_thread 8' \
-        > "$modelfile"
-    ollama create qwen3-coder-pro -f "$modelfile"
-    rm "$modelfile"
-}
-
-# Create an optimized qwen3-coder Fast variant
-# Run once after `ollama pull qwen3-coder:latest`
-create-qwen3-coder-fast() {
-    echo ">> Creating optimized qwen3-coder Fast model (16k context)..."
-    local modelfile=$(mktemp)
-    printf '%s\n' \
-        'FROM qwen3-coder:latest' \
-        'PARAMETER num_ctx 16384' \
-        'PARAMETER num_predict 2048' \
-        'PARAMETER temperature 0' \
-        'PARAMETER num_thread 8' \
-        > "$modelfile"
-    ollama create qwen3-coder-fast -f "$modelfile"
-    rm "$modelfile"
-}
-
-# Create an optimized mistral-small variant for MBP
-# Run once after `ollama pull mistral-small:24b`
-create-mistral-small-mbp() {
-    echo ">> Creating optimized mistral-small model for MBP (32k context)..."
-    local modelfile=$(mktemp)
-    printf '%s\n' \
-        'FROM mistral-small:24b' \
-        'PARAMETER num_ctx 32768' \
-        'PARAMETER num_predict 4096' \
-        'PARAMETER temperature 0' \
-        'PARAMETER num_thread 8' \
-        > "$modelfile"
-    ollama create mistral-small-mbp -f "$modelfile"
-    rm "$modelfile"
-}
-
-# ─── CLAUDE + LOCAL LLM ───────────────────────────────────────────────────────
-
-# Run Claude Code with permissions bypass (trust yourself)
-claude-skip-permissions() {
-    claude --dangerously-skip-permissions
-}
-
-# Run Claude Code backed by a local Ollama model instead of the cloud API.
-# Usage: oclaude [model]
-#   oclaude           → qwen3-coder-pro (default, strongest)
-#   oclaude fast      → qwen3-coder-fast (faster)
-#   oclaude mistral   → mistral-small-mbp (faster)
-#   oclaude 7b        → qwen2.5-coder:7b (lightweight)
-#   oclaude <name>    → any ollama model by name
-oclaude() {
-    local target_model="$1"
-    local model_name
-
-    case "$target_model" in
-        "7b")
-            model_name="qwen2.5-coder:7b"
-            ;;
-        "fast")
-            model_name="qwen3-coder-fast"
-            ;;
-        "mistral")
-            model_name="mistral-small-mbp"
-            ;;
-        ""|"pro")
-            model_name="qwen3-coder-pro:latest"
-            ;;
-        *)
-            model_name="$target_model"
-            ;;
-    esac
-
-    ensure-proxy
-
-    echo ">> Starting Local Claude ($model_name) in: $(basename "$(pwd)")"
-
-    (
-        export ANTHROPIC_BASE_URL="http://localhost:11435"
-        export ANTHROPIC_API_KEY="ollama"
-        export ANTHROPIC_DEFAULT_HAIKU_MODEL="$model_name"
-        export ANTHROPIC_DEFAULT_SONNET_MODEL="$model_name"
-        export ANTHROPIC_DEFAULT_OPUS_MODEL="$model_name"
-        export CLAUDE_CODE_MAX_TOKENS=8192
-        export CLAUDE_CODE_TIMEOUT=300000
-        export DISABLE_TELEMETRY=1
-
-        claude --model "$model_name" --dangerously-skip-permissions --bare
-    )
-}
-
-# ─── AI ORCHESTRATOR ──────────────────────────────────────────────────────────
-
-# Start the Ollama → Anthropic proxy if not already running
-ensure-proxy() {
-    if ! lsof -i :11435 &>/dev/null; then
-        echo ">> Starting Ollama proxy on :11435..."
-        python3 "$AI_PROXY" &>/tmp/ollama-proxy.log &
-        sleep 1
+    if [[ ! -L ~/.claude-local ]]; then
+        [[ -d ~/.claude-local ]] && mv ~/.claude-local ~/.claude-local.bak
+        ln -s "$wiki_root/local" ~/.claude-local
+        echo "Linked Local Brain: ~/.claude-local -> $wiki_root/local"
+    else
+        echo "Local Brain already linked: $(readlink ~/.claude-local)"
     fi
 }
 
-# Run the AI orchestrator — implementation lives in bin/run-ai and bin/patch-ai
-# (must be on $PATH, e.g. ~/ai-setup/bin)
+# ─── MODEL CREATION ───────────────────────────────────────────────────────────
+
+# Build all Ollama named model variants from custom_models.yaml.
+# Run once after pulling base models, or again after editing the yaml.
+create-ai-models() {
+    local file="${AI_MODELS_YAML:-$HOME/.local/bin/custom_models.yaml}"
+
+    for name in $(yq '.models | keys | .[]' "$file" -r); do
+        local base=$(yq ".models.\"$name\".base" "$file" -r)
+        local ctx=$(yq ".models.\"$name\".ctx" "$file" -r)
+        local temp=$(yq ".models.\"$name\".temperature" "$file" -r)
+
+        if ollama list | cut -d' ' -f1 | grep -qx "$base"; then
+            echo ">> $base already present, skipping pull"
+        else
+            echo ">> Pulling $base"
+            ollama pull "$base"
+        fi
+
+        echo ">> Building $name"
+        local modelfile=$(mktemp)
+        {
+            echo "FROM $base"
+            echo "PARAMETER num_ctx $ctx"
+            echo "PARAMETER temperature $temp"
+            yq ".models.\"$name\".top_p" "$file" -r | grep -v null >/dev/null && \
+                echo "PARAMETER top_p $(yq ".models.\"$name\".top_p" "$file" -r)"
+            yq ".models.\"$name\".num_batch" "$file" -r | grep -v null >/dev/null && \
+                echo "PARAMETER num_batch $(yq ".models.\"$name\".num_batch" "$file" -r)"
+            yq ".models.\"$name\".num_predict" "$file" -r | grep -v null >/dev/null && \
+                echo "PARAMETER num_predict $(yq ".models.\"$name\".num_predict" "$file" -r)"
+            yq ".models.\"$name\".system" "$file" -r | grep -v null >/dev/null && \
+                echo "SYSTEM \"\"\"$(yq ".models.\"$name\".system" "$file" -r)\"\"\""
+            for stop in $(yq ".models.\"$name\".stop[]?" "$file" -r); do
+                echo "PARAMETER stop \"$stop\""
+            done
+        } > "$modelfile"
+        ollama create "$name" -f "$modelfile"
+        rm -f "$modelfile"
+    done
+}
+
+# ─── CLAUDE WRAPPER ───────────────────────────────────────────────────────────
+
+# Wraps the claude CLI to ensure cloud sessions are never accidentally routed
+# through LiteLLM (clears ANTHROPIC_API_KEY and ANTHROPIC_BASE_URL).
 #
 # Usage:
-#   run-ai [spec-file]    — generate mode (default: .ai-spec.md in cwd)
-#   patch-ai [spec-file]  — patch mode / bugfixes on existing code
-
-# Write a spec — prompts for filename + one-line notes, then launches grill-me.
-# Specs are saved to $AI_WIKI/claude/plans/<name>.md
-# Implementation: bin/ai-spec (must be on $PATH, e.g. ~/ai-setup/bin)
-#
-# Workflow:
-#   1. ai-spec                              → writes spec via grill-me
-#   2. run-ai $AI_WIKI/claude/plans/name.md → run the orchestrator against it
+#   claude           → normal cloud Claude
+#   claude --skip    → cloud Claude with --dangerously-skip-permissions
+claude() {
+    local mode="normal"
+    if [[ "$1" == "--skip" ]]; then
+        mode="skip"
+        shift
+    fi
+    unset ANTHROPIC_API_KEY
+    unset ANTHROPIC_BASE_URL
+    export CLAUDE_CODE_USE_BEDROCK=0
+    export CLAUDE_CODE_USE_VERTEX=0
+    if [[ "$mode" == "skip" ]]; then
+        command claude --dangerously-skip-permissions "$@"
+    else
+        command claude "$@"
+    fi
+}
 
 # ─── GIT WORKTREES ────────────────────────────────────────────────────────────
 #
-# wt <branch>          — create or open a worktree
-# wt -d <branch>       — delete a worktree and its branch
+# Usage:
+#   wt <branch>       — create or open a worktree (creates branch from main if new)
+#   wt -d <branch>    — delete worktree and its branch
 #
-# Adapt the body to your team's workflow. The key behaviors:
-#   - Creates a per-worktree Claude memory dir in the wiki
-#   - Creates a CLAUDE.local.md with worktree context for Claude
-#   - Opens VS Code at the worktree path
-#
-# You likely need to customize:
-#   - The VS Code tasks.json symlink section (or remove it)
-#   - The wiki memory path structure
+# Customize AI_REPO and AI_WORKTREES_DIR in the CONFIG block above.
 
 wt() {
     local repo="$AI_REPO"
@@ -231,7 +166,6 @@ wt() {
     local base="${2:-main}"
     local target_dir="$AI_WORKTREES_DIR/$branch"
 
-    # 1. Check/Create Worktree
     if [ -d "$target_dir" ]; then
         echo "== Worktree exists, opening VS Code =="
     else
@@ -241,7 +175,6 @@ wt() {
             || git -C "$repo" worktree add "$target_dir" -b "$branch" "$base"
     fi
 
-    # 2. Setup AI Project Memory (Wiki)
     local wt_path wt_slug project_root
     wt_path="$(realpath "$target_dir")"
     wt_slug=$(echo "$wt_path" | sed 's|[/._]|-|g')
@@ -249,7 +182,6 @@ wt() {
 
     mkdir -p "$project_root/memory"
 
-    # Write a branch-specific context file for Claude
     {
         echo "# Worktree Context: $branch"
         echo "- You are working in a git worktree at $target_dir."
@@ -263,11 +195,9 @@ wt() {
     echo "   'oclaude' -> Ollama Local"
     echo "----------------------------------------"
 
-    # 3. Open in VS Code
     open -a "Visual Studio Code" "$target_dir"
 }
 
-# Tab completion for wt
 _wt_complete() {
     local repo="$AI_REPO"
     local -a branches flags

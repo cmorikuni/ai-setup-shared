@@ -1,0 +1,39 @@
+models:
+  qwen3-coder-pro:              # main coder model
+    base: qwen3-coder:latest
+    ctx: 24576
+    temperature: 0
+    top_p: 0.95
+    repeat_penalty: 1.1
+    num_batch: 512
+    num_predict: 4096
+    stop:
+      - "<|file_separator|>"
+      - "<|endoftext|>"
+      - "<|im_start|>"
+      - "<|im_end|>"
+
+  qwen3-coder-fast:             # small window for quick tasks
+    base: qwen3-coder:latest
+    ctx: 3072
+    temperature: 0
+    num_batch: 768
+    num_predict: 1024
+
+  mistral-small-mbp:            # fast and cheap
+    base: mistral-small:24b
+    ctx: 6144
+    temperature: 0
+    num_predict: 2048
+    num_thread: 8
+    gpu: 99
+
+  kimi-pro:                     # 128k ctx for large refactors
+    base: kimi-k2.6:cloud       # verify with: ollama list — remove if not available
+    ctx: 131072
+    temperature: 0
+    top_p: 0.9
+    system: |
+      You are an expert software architect.
+      You specialize in long-horizon tasks and complex multi-file refactoring.
+      Provide deep reasoning before outputting code blocks.

@@ -1,0 +1,62 @@
+#!/usr/bin/env zsh
+# Run Claude Code backed by a local Ollama model via LiteLLM.
+# Usage: oclaude [model] [claude args...]
+#   oclaude              → qwen-local (default, strong coder)
+#   oclaude fast         → qwen-fast  (small context, quick iterations)
+#   oclaude kimi         → kimi-local (128k ctx, large refactors)
+#   oclaude mistral      → mistral-local (fast and cheap)
+#   oclaude <alias>      → any model alias defined in litellm_config.yaml
+
+[[ ! -L "$HOME/.claude-local" ]] && echo "⚠️  ~/.claude-local not linked. Run claude-bootstrap first."
+
+ensure-litellm() {
+    local port=4000
+    local config="${AI_LITELLM_YAML:-$HOME/.local/bin/litellm_config.yaml}"
+
+    if curl -s http://localhost:$port/v1/models >/dev/null 2>&1; then
+        echo ">> LiteLLM already running on :$port (PID: $(lsof -ti :$port))"
+        return 0
+    fi
+
+    echo ">> Starting LiteLLM on :$port..."
+    nohup uv tool run litellm --config "$config" --port "$port" > /tmp/litellm.log 2>&1 &
+    disown
+
+    for i in {1..30}; do
+        if lsof -i :$port &>/dev/null; then
+            echo ">> LiteLLM ready"
+            return 0
+        fi
+        echo -n "."
+        sleep 0.5
+    done
+
+    echo "\n!! Startup failed. Check /tmp/litellm.log"
+    tail -n 5 /tmp/litellm.log
+    return 1
+}
+
+target_model="$1"
+case "$target_model" in
+    "fast")    model_name="qwen-fast" ;;
+    "kimi")    model_name="kimi-local" ;;
+    "mistral") model_name="mistral-local" ;;
+    ""|"pro")  model_name="qwen-local" ;;
+    *)         model_name="$target_model" ;;
+esac
+[[ -n "$target_model" ]] && shift
+
+ensure-litellm
+
+echo ">> oclaude ($model_name) in: $(basename "$(pwd)")"
+
+export ANTHROPIC_BASE_URL="http://localhost:4000"
+unset ANTHROPIC_AUTH_TOKEN
+export ANTHROPIC_API_KEY="sk-local-dev"
+export CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1
+export CLAUDE_CODE_MAX_TOKENS=8192
+export CLAUDE_CODE_TIMEOUT=300000
+export DISABLE_TELEMETRY=1
+export CLAUDE_CONFIG_DIR="$HOME/.claude-local"
+
+exec claude --model "$model_name" --permission-mode bypassPermissions "$@"
